@@ -18,6 +18,11 @@ cd apex
 pip install -v --disable-pip-version-check --no-cache-dir ./
 ```
 
+- Autoattack
+```
+pip install git+https://github.com/fra31/auto-attack
+```
+
 ## File Descriptions
 
 - BaseModels.py: Includes the architecture of Wong et al. and abstract classes for training / validation
