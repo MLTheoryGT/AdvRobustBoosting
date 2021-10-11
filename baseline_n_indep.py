@@ -10,7 +10,7 @@ import csv
 from Testing import testEnsemble
 
 train_config = {
-    "num_samples_wl": 750001,
+    "num_samples_wl": 750000,
     "num_wl": 4,
     "train_eps_wl": 8,
     "training_valrestarts": 1,
@@ -38,7 +38,8 @@ train_config = {
     "model_base": PreActResNet18,
     "val_attacks": [attack_pgd],
     "dataset": datasets.CIFAR10,
-    "weak_learner_type": WongBasedTrainingCIFAR10
+    "weak_learner_type": WongBasedTrainingCIFAR10,
+    "path_head": "./models/wong/cifar10/baseline/750000-1/"
 }
 weakLearners = []
 weakLearnerWeights = []
@@ -50,7 +51,7 @@ train_ds.targets = torch.tensor(np.array(train_ds.targets))
 test_ds.targets = torch.tensor(np.array(test_ds.targets))
 train_loader = torch.utils.data.DataLoader(train_ds, batch_size=128, shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_ds, batch_size=128, shuffle=False)
-path_head = f"./models/{train_config['training_method']}/{train_config['dataset_name']}/baseline/{train_config['num_samples_wl']}Eps{train_config['train_eps_wl']}/"
+path_head = train_config["path_head"]
 #CHANGE
 if os.path.exists(path_head):
     print("Already exists, exiting")
@@ -74,7 +75,7 @@ with open(weight_path, 'w') as csvfile:
     writer.writerow(weakLearnerWeights)
 
 test_config = {
-    "num_samples_wl": 750001,
+    "num_samples_wl": 750000,
     "num_samples_train": 200,
     "num_samples_val": 10000,
     "train_eps_wl": 8,
@@ -91,10 +92,10 @@ test_config = {
     "model_base": PreActResNet18,
     "dataset": datasets.CIFAR10,
     'weak_learner_type': WongBasedTrainingCIFAR10,
-    'path': path_head
+    'path': path_head,
+    "results_path": "./results/wong/cifar10/baseline/750000-1"
 }
 
 # test_config['results_path'] = f"results/plots/{test_config['training_method']}/{test_config['dataset_name']}/snapshot/{test_config['num_samples_wl']}Eps{test_config['train_eps_wl']}"
-test_config['results_path'] = f"results/plots/{test_config['training_method']}/{test_config['dataset_name']}/baseline/{test_config['num_samples_wl']}Eps{test_config['train_eps_wl']}_full"
 # # CHANGE
 testEnsemble(test_config)

@@ -99,8 +99,10 @@ class WongBasedTrainingCIFAR10(BaseNeuralNet):
                         delta[:, j, :, :].uniform_(-epsilon[j][0][0].item(), epsilon[j][0][0].item())
                     delta.data = clamp(delta, lower_limit - X, upper_limit - X)
                 if i % 100 == 99:
+                    model.eval()
                     self.record_accuracies(currSamples, val_X=val_X, val_y=val_y, train_X=X, train_y=y, attack_iters=config["attack_iters_val_wl"], 
                                             restarts=config["restarts_wl"], val_attacks=config["val_attacks"], dataset_name=config["dataset_name"])
+                    model.train()
                 delta.requires_grad = True
                 output = model(X + delta[:X.size(0)])
                 loss = F.cross_entropy(output, y)
