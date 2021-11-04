@@ -65,7 +65,7 @@ def testEnsemble(config):
     l = [y for (x, y) in xys]
     y_test = torch.cat(l, 0)
 #     y_test = torch.cat(l[:num_batches], 0)
-    min_wl = 1
+    min_wl = 0
 
     for i in range(config['num_wl']):
         print("Weak Learner ", i, ".  Time Elapsed (s): ", (datetime.now()-startTime).seconds)

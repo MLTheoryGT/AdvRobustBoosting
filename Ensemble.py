@@ -53,6 +53,10 @@ class Ensemble(Validator):
         self.weakLearnerWeights.append(weakLearnerWeight)
         self.weakLearnerWeightsTensor = torch.tensor(self.weakLearnerWeights, requires_grad=False).unsqueeze(1).float().cuda()
     
+    def updateWeakLearnerWeight(self, idx, weakLearnerWeight):
+        self.weakLearnerWeights[idx] = weakLearnerWeight
+        self.weakLearnerWeightsTensor = torch.tensor(self.weakLearnerWeights, requires_grad=False).unsqueeze(1).float().cuda()
+    
     def getSingleWLPrediction(self, i, wLPredictions, X):
 #         print("memory allocated:", cutorch.memory_allocated(0), "for WL num ", i)
         if not isinstance(self.weakLearners[i], str):

@@ -3,8 +3,8 @@ import torch
 from torchvision import datasets, transforms
 import numpy as np
 from WongBasedTraining import WongBasedTrainingCIFAR10
-from PGDBasedTraining import PGDBasedTraining
-from TradesBasedTraining import TradesBasedTrainingCIFAR10
+# from PGDBasedTraining import PGDBasedTraining
+# from TradesBasedTraining import TradesBasedTrainingCIFAR10
 from Architectures import PreActResNet18, PreActResNet18_100, WideResNet, WideResNet34_10_10, WideResNet34_100_10
 import matplotlib.pyplot as plt
 import os

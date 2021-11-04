@@ -140,12 +140,70 @@ def SchapireWongMulticlassBoosting(config):
         print("Predictions: ", allIndices[:10])
         
         # Get alpha for this weak learners
-        a = -C_t[np.arange(m), allIndices.astype(int)].sum()
-        b = fexp.sum()
-        delta_t = a / b
-        alpha = 1/2*np.log((1+delta_t)/(1-delta_t))
-        print("Alpha: ", alpha)
-        print("before pessimistic update: ", datetime.now()-start)
+#         a = -C_t[np.arange(m), allIndices.astype(int)].sum()
+#         b = fexp.sum()
+#         delta_t = a / b
+#         alpha = 1/2*np.log((1+delta_t)/(1-delta_t))
+#         print("Alpha: ", alpha)
+#         print("before pessimistic update: ", datetime.now()-start)
+        
+#         y_train = train_ds.targets
+#         correctIndices = (allIndices == y_train.numpy())
+#         incorrectIndices = (allIndices != y_train.numpy())
+#         f[np.arange(m), y_train] += alpha * correctIndices
+#         f[incorrectIndices, :] += alpha
+#         f[np.arange(m), y_train] -= alpha * incorrectIndices
+        
+        # indices = predictions
+        # look at pseudocode in https://www.overleaf.com/project/5e1614cde63c0700010771a7
+        # correctIndices = (allIndices == y_train.numpy())
+        # incorrectIndices = (allIndices != y_train.numpy())
+        # Ap = C_t[correctIndices].sum() - (C_t[:][y_train])[correctIndices].sum()
+        # An = C_t[incorrectIndices].sum() - (C_t[:][y_train])[correctIndices].sum()
+        # alpha = 1/2*np.log(Ap/An)
+
+        # how to update ft, how to do attacks
+    
+        # save WL model and alpha
+#         model_path = f'{path_head}wl_{t}.pth'
+#         torch.save(h_i.model.state_dict(), model_path)
+        
+
+        
+#         torch.cuda.empty_cache()
+#         ensemble.addWeakLearner(model_path, alpha)
+#         print("t: ", t, "memory allocated:", cutorch.memory_allocated(0))   
+
+        model_path = f'{path_head}wl_{t}.pth'
+        torch.save(h_i.model.state_dict(), model_path)
+        ensemble.addWeakLearner(model_path, 0)
+        alphas = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
+        opt_alpha = 0
+        opt_acc = 0
+        for (X, y) in train_loader:
+            X = X.cuda()
+            y = y.cuda()
+            for alpha in alphas:
+                ensemble.updateWeakLearnerWeight(-1, alpha)
+                # compute accuracy
+                apgd = APGDAttack_targeted(ensemble.predict, n_restarts=1, n_iter=100, verbose=False,
+                                          eps=0.127, norm='Linf', eot_iter=1, rho=.75, device='cuda')
+                
+                x = X.clone().cuda()
+                if len(x.shape) == 3:
+                    x.unsqueeze_(dim=0)
+                x_adv = apgd.perturb(X, y)
+                predictions = ensemble.predict(x_adv).argmax(axis=1)
+                acc = (predictions==y).float().mean()
+                print("acc:", acc)
+                if acc > opt_acc:
+                    opt_acc = acc
+                    opt_alpha = alpha
+            ensemble.updateWeakLearnerWeight(-1, opt_alpha)
+            break
+        alpha = opt_alpha
+        
+        print("Alpha:", alpha)
         
         y_train = train_ds.targets
         correctIndices = (allIndices == y_train.numpy())
@@ -153,18 +211,11 @@ def SchapireWongMulticlassBoosting(config):
         f[np.arange(m), y_train] += alpha * correctIndices
         f[incorrectIndices, :] += alpha
         f[np.arange(m), y_train] -= alpha * incorrectIndices
-    
-        # save WL model and alpha
-        model_path = f'{path_head}wl_{t}.pth'
-        torch.save(h_i.model.state_dict(), model_path)
         
         del h_i.model
         del h_i
         del predictions
         
-        torch.cuda.empty_cache()
-        ensemble.addWeakLearner(model_path, alpha)
-        print("t: ", t, "memory allocated:", cutorch.memory_allocated(0))   
         print("After WL ", t, " time elapsed(s): ", (datetime.now() - start).seconds)
     
         
