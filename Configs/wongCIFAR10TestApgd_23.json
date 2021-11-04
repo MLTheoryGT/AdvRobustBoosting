@@ -1,9 +1,9 @@
 {
-    "num_samples_wl": 750021,
+    "num_samples_wl": 750023,
     "num_samples_train": 200,
     "num_samples_val": 1500,
     "train_eps_wl": 8,
-    "num_wl": 7,
+    "num_wl": 4,
     "batch_size": 128,
     "testing_attack_iters": 20,
     "testing_restarts": 10,
@@ -12,5 +12,6 @@
     "train_batch_size": 128,
     "test_batch_size": 128,
     "attack_eps_ensemble": [0.127],
-    "auto_attack": true
+    "auto_attack": true,
+    "results_path": "./results/plots/wong/cifar10/boosting/750023_tune/"
 }
