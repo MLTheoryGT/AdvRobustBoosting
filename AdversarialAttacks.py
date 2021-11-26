@@ -44,19 +44,17 @@ def attack_pgd_mnist(X, y, epsilon, model, alpha, attack_iters=5, restarts=1):
         max_loss = torch.max(max_loss, all_loss)
     return max_delta
 
-def attack_pgd(X, y, epsilon, model, attack_iters=20, restarts=1, dataset_name='cifar10', change_eps=True):
-#     print("pgd called with", epsilon, alpha, attack_iters, restarts)
-#     alpha = alpha * 100
-#     print(alpha)
-#     print("x30")
+def attack_pgd(X, y, epsilon, model, attack_iters=20, restarts=1, dataset_name='cifar10', targeted=False, change_eps = True):
     if dataset_name == 'cifar10':
         (std, upper_limit, lower_limit) = (cifar10_std, cifar10_upper_limit, cifar10_lower_limit)
     elif dataset_name == 'cifar100':
         (std, upper_limit, lower_limit) = (cifar100_std, cifar100_upper_limit, cifar100_lower_limit)
     alpha = (2/255.)/std
+#     print("epsilon:", epsilon)
     
     if change_eps:
         epsilon = torch.tensor([[[epsilon]], [[epsilon]], [[epsilon]]]).cuda()
+
     max_loss = torch.zeros(y.shape[0]).cuda()
     max_delta = torch.zeros_like(X).cuda()
     for zz in range(restarts):
@@ -66,19 +64,19 @@ def attack_pgd(X, y, epsilon, model, attack_iters=20, restarts=1, dataset_name='
         delta.data = clamp(delta, lower_limit - X, upper_limit - X)
         delta.requires_grad = True
         for attackIter in range(attack_iters):
-#             print("attackIter: ", attackIter)
             output = model(X + delta)
-#             print(output[0:10])
-#             output = output * 30
-#             output = torch.nn.functional.softmax(output)
             index = torch.where(output.max(1)[1] == y)
             if len(index[0]) == 0:
                 break
+            print("output shape:", output.shape)
+            print("y shape:", y.shape)
             loss = F.cross_entropy(output, y)
             loss.backward()
             grad = delta.grad.detach()
             d = delta[index[0], :, :, :]
             g = grad[index[0], :, :, :]
+            if targeted:
+                alpha = -alpha
             d = clamp(d + alpha * torch.sign(g), -epsilon, epsilon)
             d = clamp(d, lower_limit - X[index[0], :, :, :], upper_limit - X[index[0], :, :, :])
             delta.data[index[0], :, :, :] = d
@@ -94,6 +92,7 @@ def attack_pgd(X, y, epsilon, model, attack_iters=20, restarts=1, dataset_name='
 #     plt.hist(flatDelta)
 #     plt.show()
     return max_delta
+
 
 def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)

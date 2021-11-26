@@ -19,6 +19,7 @@ import csv
 import os
 from autoattack.square import SquareAttack
 from autoattack.autopgd_base import APGDAttack_targeted
+from torch.utils.data import Subset
 # from SquareAttack import SquareAttack
 
 def SchapireWongMulticlassBoosting(config):
@@ -41,6 +42,7 @@ def SchapireWongMulticlassBoosting(config):
     test_loader_default = torch.utils.data.DataLoader(test_ds, batch_size=config['batch_size_wl'], shuffle=False)
 
     f = np.zeros((m, k))
+    print(f)
     
     ensemble = Ensemble(weak_learner_type=config['weak_learner_type'], attack_eps=[], model_base=config['model_base'], weakLearners=[])
     
@@ -54,21 +56,15 @@ def SchapireWongMulticlassBoosting(config):
     else:
         os.mkdir(path_head)
     
-    def gcLoop():
+    for t in range(config['num_wl']):
         print("-"*100)
         print("Training weak learner {} of {}".format(t, config['num_wl']))
         # Boosting matrix update
- 
-        C_t = np.zeros((m, k))
-        fcorrect = f[np.arange(m), train_ds.targets]
-        fexp = np.exp(f - fcorrect[:,None])
-        C_t = fexp.copy()
-        fexp[np.arange(m), train_ds.targets] = 0
-        C_t[np.arange(m), train_ds.targets] = -np.sum(fexp, axis=1)
-        C_tp = np.abs(C_t)
+        D_t = np.exp(f)
+        D_t[np.arange(m), train_ds.targets] = 0
         
         # Set up boosting samplers
-        train_sampler = BoostingSampler(train_ds, C_tp)
+        train_sampler = BoostingSampler(train_ds, D_t)
         train_loader = torch.utils.data.DataLoader(train_ds, sampler=train_sampler, batch_size=config['batch_size_wl'])
         
         # Fit WL on weighted subset of data
@@ -93,32 +89,14 @@ def SchapireWongMulticlassBoosting(config):
         # update f one batch at a time via f[np.arange(batchsize)]
         advBatchSize = train_loader_default.batch_size
         a = 0
-        allIndices = np.zeros(m)
+        advPredictions = np.zeros(m)
+        
+        # untargeted attacks
+        
         for advCounter, data in enumerate(train_loader_default):
             X = data[0].cuda()
             y = data[1].cuda()
-            # Maybe rewrite the below in a cleaner fashion?
-            is_specific = ('attack_name' in config and config['attack_name'])
-            
-            if config["train_eps_wl"] == 0:
-                delta = 0
-            elif not is_specific: # CHANGE
-                delta = attack_pgd(X, y, config['attack_eps_wl'][0], h_i.predict, restarts=1, attack_iters=20)
-#             delta = attack_fgsm(X, y, config['attack_eps_wl'][0], h_i.predict)
-            if 'attack_name' not in config or not config['attack_name']:
-                predictions = h_i.predict(X + delta).argmax(axis=1)
-            elif config['attack_name'] == 'square':
-                # Use eps=[0.127] since data is normalized
-                square = SquareAttack(h_i.predict, p_init=.8, n_queries=100, eps=0.127, norm='Linf',
-                n_restarts=1, seed=0, verbose=False, device=torch.device('cuda'), resc_schedule=False)
-                print("X shape:", X.shape)
-                x = X.clone().cuda()
-                if len(x.shape) == 3:
-                    x.unsqueeze_(dim=0)
-                print("x shape:", x.shape)
-                x_adv = square.perturb(X, y)
-                predictions = h_i.predict(x_adv).argmax(axis=1)
-            elif config['attack_name'] == 'apgd-t':
+            if config['attack_name'] == 'apgd-t':
                 apgd = APGDAttack_targeted(h_i.predict, n_restarts=1, n_iter=100, verbose=False,
                                           eps=0.127, norm='Linf', eot_iter=1, rho=.75, device='cuda')
 #                 apgd = APGDAttack(h_i.predict, n_restarts=5, n_iter=100, verbose=False,
@@ -131,98 +109,92 @@ def SchapireWongMulticlassBoosting(config):
                 predictions = h_i.predict(x_adv).argmax(axis=1)
                 
             print("predictions shape:", predictions.shape)
-            indices = predictions.detach().int().cpu().numpy()
-            print("indices shape:", indices.shape)
+            predictions = predictions.detach().int().cpu().numpy()
             upper_bound = min(len(train_loader_default.dataset), (advCounter + 1)*advBatchSize)
-            allIndices[np.arange(advCounter*advBatchSize, upper_bound)] = indices
+            advPredictions[np.arange(advCounter*advBatchSize, upper_bound)] = predictions
+        
+        # REMOVE THIS 
+#         advPredictions = torch.clone(train_ds.targets).numpy()
+#         advPredictions[:200] += 1
+#         advPredictions[:200] %= k
+#         perturb_indices = np.unique(np.random.randint(low=0, high=advPredictions.shape[0], size=7000))
+#         print("perturb_indices shape:", perturb_indices.shape)
+#         advPredictions[perturb_indices] += 1
+#         advPredictions[perturb_indices] %= k
+        
+#         advPredictions = np.random.randint(low=0, high=k, size=m)
         
         print("After allindices: ", datetime.now()-start)
-        print("Predictions: ", allIndices[:10])
-        
-        # Get alpha for this weak learners
-#         a = -C_t[np.arange(m), allIndices.astype(int)].sum()
-#         b = fexp.sum()
-#         delta_t = a / b
-#         alpha = 1/2*np.log((1+delta_t)/(1-delta_t))
-#         print("Alpha: ", alpha)
-#         print("before pessimistic update: ", datetime.now()-start)
-        
-#         y_train = train_ds.targets
-#         correctIndices = (allIndices == y_train.numpy())
-#         incorrectIndices = (allIndices != y_train.numpy())
-#         f[np.arange(m), y_train] += alpha * correctIndices
-#         f[incorrectIndices, :] += alpha
-#         f[np.arange(m), y_train] -= alpha * incorrectIndices
-        
-        # indices = predictions
-        # look at pseudocode in https://www.overleaf.com/project/5e1614cde63c0700010771a7
-        # correctIndices = (allIndices == y_train.numpy())
-        # incorrectIndices = (allIndices != y_train.numpy())
-        # Ap = C_t[correctIndices].sum() - (C_t[:][y_train])[correctIndices].sum()
-        # An = C_t[incorrectIndices].sum() - (C_t[:][y_train])[correctIndices].sum()
-        # alpha = 1/2*np.log(Ap/An)
-
-        # how to update ft, how to do attacks
-    
-        # save WL model and alpha
-#         model_path = f'{path_head}wl_{t}.pth'
-#         torch.save(h_i.model.state_dict(), model_path)
-        
-
-        
-#         torch.cuda.empty_cache()
-#         ensemble.addWeakLearner(model_path, alpha)
-#         print("t: ", t, "memory allocated:", cutorch.memory_allocated(0))   
+#         print("Predictions: ", advPredictions[:10]) 
 
         model_path = f'{path_head}wl_{t}.pth'
         torch.save(h_i.model.state_dict(), model_path)
         ensemble.addWeakLearner(model_path, 0)
-        alphas = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
-        opt_alpha = 0
-        opt_acc = 0
-        for (X, y) in train_loader:
-            X = X.cuda()
-            y = y.cuda()
-            for alpha in alphas:
-                ensemble.updateWeakLearnerWeight(-1, alpha)
-                # compute accuracy
-                apgd = APGDAttack_targeted(ensemble.predict, n_restarts=1, n_iter=100, verbose=False,
-                                          eps=0.127, norm='Linf', eot_iter=1, rho=.75, device='cuda')
-                
-                x = X.clone().cuda()
-                if len(x.shape) == 3:
-                    x.unsqueeze_(dim=0)
-                x_adv = apgd.perturb(X, y)
-                predictions = ensemble.predict(x_adv).argmax(axis=1)
-                acc = (predictions==y).float().mean()
-                print("acc:", acc)
-                if acc > opt_acc:
-                    opt_acc = acc
-                    opt_alpha = alpha
-            ensemble.updateWeakLearnerWeight(-1, opt_alpha)
-            break
-        alpha = opt_alpha
+        
+        alpha = 0.01
+        ensemble.updateWeakLearnerWeight(-1, alpha)
         
         print("Alpha:", alpha)
         
         y_train = train_ds.targets
-        correctIndices = (allIndices == y_train.numpy())
-        incorrectIndices = (allIndices != y_train.numpy())
-        f[np.arange(m), y_train] += alpha * correctIndices
-        f[incorrectIndices, :] += alpha
-        f[np.arange(m), y_train] -= alpha * incorrectIndices
+        correctIndices = (advPredictions == y_train.numpy())
+        incorrectIndices = (advPredictions != y_train.numpy())
+        
+        loss = -np.ones((m, k))
+        correctLabels = y_train[correctIndices]
+        loss[correctIndices,correctLabels] = 0
+        y_hat = advPredictions[incorrectIndices]
+        print("yhat", y_hat)
+        y_hat = y_hat.astype(int)
+        
+        incorrectLabels = y_train[incorrectIndices].numpy()
+        num_incorrect = incorrectLabels.shape[0]
+        targeted_loss = np.zeros((num_incorrect,k))
+        targeted_loss[:,y_hat] = 1
+        # pick a class uniformly from [k] - {\hat{y}, y}
+        rand_classes = np.random.randint(k-2, size=(num_incorrect))
+#         print("rand_classes:", rand_classes.shape)
+#         print("incorrect_labels:", incorrectLabels.shape)
+#         print("y_hat:", y_hat.shape)
+        rand_classes[rand_classes >= np.minimum(incorrectLabels, y_hat)] += 1
+        rand_classes[rand_classes >= np.maximum(incorrectLabels, y_hat)] += 1
+        
+        # targeted attacks
+        
+        
+#         incorrectDS = Subset(datasets.CIFAR10('./data', train=True, download=True, transform=None), incorrect_ds_indices)
+        incorrectDS = Subset(train_ds, np.where(incorrectIndices==True)[0])
+#         print("np.where: ", np.where(incorrectIndices==True))
+#         print("np.where shape: ", np.where(incorrectIndices==True).shape)
+        #         incorrectDS = train_ds[incorrectIndices]
+# #         define trainloader
+        train_loader = torch.utils.data.DataLoader(incorrectDS, batch_size=config['batch_size_wl'], shuffle=False)
+        for i, (X, _) in enumerate(train_loader):
+            X = X.cuda()
+#             print("i: ", i)
+            l = config['batch_size_wl'] * i
+            r = min(l + config['batch_size_wl'], num_incorrect)
+            length = r - l + 1
+            y = torch.tensor(rand_classes[l:r]).cuda()
+#             print("X:", X)
+#             print("X shape:", X.shape)
+            x_adv = attack_pgd(X, y, 0.127, h_i.predict, dataset_name=config['dataset_name'], targeted=True)
+            y_pred_adv = h_i.predict(x_adv).argmax(dim=1).cpu().numpy()
+            # y: targets
+            # y_pred_adv: predictions
+            # update loss wherever predictions = targets
+            y = y.cpu().numpy()
+            targeted_loss[l:r,y][y==y_pred_adv] = k - 2
+        
+        loss[incorrectIndices] = targeted_loss
+        
+        f += alpha * loss
         
         del h_i.model
         del h_i
         del predictions
         
         print("After WL ", t, " time elapsed(s): ", (datetime.now() - start).seconds)
-    
-        
-    #end of gc loop
-    for t in range(config['num_wl']):
-        gcLoop()
-        gc.collect()
         
     weight_path = f'{path_head}wl_weights.csv'
     print("weights:", ensemble.weakLearnerWeights)
